@@ -1,0 +1,269 @@
+import 'package:flutter/material.dart';
+
+import '../../../data/models/service_item.dart';
+import '../../../theme/app_theme.dart';
+import 'web_progress_line.dart';
+
+/// Actions in the toolbar's overflow menu.
+enum ServiceToolbarAction { openExternal, copyAddress, editService, unloadPage }
+
+/// The service view's chrome: back, forward, title, reload, close, overflow.
+///
+/// Two corrections are baked into this layout:
+///
+/// 1. The first version had no chrome at all ("just the WebView"), which left no
+///    way to reload a wedged page.
+/// 2. The second version had a single left button that *morphed* between a back
+///    arrow and a close cross depending on history. That was too clever: as soon
+///    as you navigated anywhere the arrow took over, and there was no longer any
+///    way to leave the service except pressing back once per page. Back and
+///    close are now two separate, permanently visible buttons, each disabled
+///    when it has nothing to do.
+///
+/// Everything that changes during navigation is read from [ValueListenable]s
+/// *inside* this widget rather than passed in as plain values, so a history or
+/// loading change rebuilds the toolbar alone and never touches the
+/// `WebViewWidget` subtree.
+class ServiceToolbar extends StatelessWidget {
+  const ServiceToolbar({
+    super.key,
+    required this.service,
+    required this.canGoBack,
+    required this.canGoForward,
+    required this.loading,
+    required this.progress,
+    required this.onBack,
+    required this.onForward,
+    required this.onReload,
+    required this.onClose,
+    required this.onAction,
+  });
+
+  /// Height of the control row, excluding the status-bar inset.
+  static const double controlHeight = 52;
+
+  /// Width of one control. Six of them fit a 360dp phone with room left over
+  /// for the title.
+  static const double buttonWidth = 44;
+
+  final ServiceItem service;
+  final ValueNotifier<bool> canGoBack;
+  final ValueNotifier<bool> canGoForward;
+  final ValueNotifier<bool> loading;
+  final ValueNotifier<double> progress;
+
+  /// One step back in page history.
+  final VoidCallback onBack;
+  final VoidCallback onForward;
+  final VoidCallback onReload;
+
+  /// Leave the service and return to the grid. The session stays warm.
+  final VoidCallback onClose;
+
+  final ValueChanged<ServiceToolbarAction> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.viewPaddingOf(context).top;
+
+    return Material(
+      color: AppColors.surface,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.only(top: topInset),
+              child: SizedBox(
+                height: controlHeight,
+                child: ListenableBuilder(
+                  listenable: Listenable.merge(<Listenable>[
+                    canGoBack,
+                    canGoForward,
+                    loading,
+                  ]),
+                  builder: (context, _) => Row(
+                    children: <Widget>[
+                      _ToolbarButton(
+                        icon: Icons.arrow_back,
+                        tooltip: 'Back',
+                        onTap: canGoBack.value ? onBack : null,
+                      ),
+                      _ToolbarButton(
+                        icon: Icons.arrow_forward,
+                        tooltip: 'Forward',
+                        onTap: canGoForward.value ? onForward : null,
+                      ),
+                      Expanded(child: _Title(service: service)),
+                      _ToolbarButton(
+                        icon: Icons.refresh,
+                        tooltip: 'Reload',
+                        onTap: onReload,
+                      ),
+                      _ToolbarButton(
+                        icon: Icons.close,
+                        tooltip: 'Back to services',
+                        onTap: onClose,
+                      ),
+                      _OverflowMenu(onAction: onAction),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Pinned to the bottom edge of the toolbar, the way a browser puts
+            // it, rather than floating over the page.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: WebProgressLine(progress: progress, loading: loading),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Title extends StatelessWidget {
+  const _Title({required this.service});
+
+  final ServiceItem service;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Text(
+          service.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        Text(
+          service.displayHost,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AppText.mono.copyWith(
+            fontSize: 10.5,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ToolbarButton extends StatelessWidget {
+  const _ToolbarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+
+  /// Null renders the button disabled, which is how back and forward read when
+  /// there is nowhere to go.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: ServiceToolbar.buttonWidth,
+    height: double.infinity,
+    child: IconButton(
+      onPressed: onTap,
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      icon: Icon(
+        icon,
+        size: 22,
+        color: onTap == null
+            ? AppColors.textDisabled
+            : AppColors.textPrimary,
+      ),
+    ),
+  );
+}
+
+class _OverflowMenu extends StatelessWidget {
+  const _OverflowMenu({required this.onAction});
+
+  final ValueChanged<ServiceToolbarAction> onAction;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: ServiceToolbar.buttonWidth,
+    height: double.infinity,
+    child: PopupMenuButton<ServiceToolbarAction>(
+      tooltip: 'More',
+      padding: EdgeInsets.zero,
+      color: AppColors.surfaceHigh,
+      position: PopupMenuPosition.under,
+      icon: const Icon(
+        Icons.more_vert,
+        size: 22,
+        color: AppColors.textPrimary,
+      ),
+      onSelected: onAction,
+      itemBuilder: (context) => <PopupMenuEntry<ServiceToolbarAction>>[
+        _menuEntry(
+          ServiceToolbarAction.openExternal,
+          Icons.open_in_new,
+          'Open in browser',
+        ),
+        _menuEntry(
+          ServiceToolbarAction.copyAddress,
+          Icons.link,
+          'Copy address',
+        ),
+        _menuEntry(
+          ServiceToolbarAction.editService,
+          Icons.tune,
+          'Service settings',
+        ),
+        _menuEntry(
+          ServiceToolbarAction.unloadPage,
+          Icons.layers_clear_outlined,
+          'Unload page',
+        ),
+      ],
+    ),
+  );
+}
+
+PopupMenuItem<ServiceToolbarAction> _menuEntry(
+  ServiceToolbarAction value,
+  IconData icon,
+  String label,
+) => PopupMenuItem<ServiceToolbarAction>(
+  value: value,
+  child: Row(
+    children: <Widget>[
+      Icon(icon, size: 20, color: AppColors.textSecondary),
+      const SizedBox(width: 14),
+      // Flexible so a long label (or a large text scale) ellipsizes rather than
+      // overflowing the menu's fixed width.
+      Flexible(
+        child: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+        ),
+      ),
+    ],
+  ),
+);

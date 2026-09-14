@@ -1,0 +1,13 @@
+# OS / editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Android local state (machine-specific paths, caches)
+app/android/.gradle/
+app/android/local.properties
+app/android/build/
+app/android/.kotlin/
+
+# Anything Flutter leaves in-app is covered by app/.gitignore (build/, .dart_tool/…).
