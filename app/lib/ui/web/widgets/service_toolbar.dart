@@ -15,7 +15,8 @@ enum ServiceToolbarAction {
   orientationLandscape,
 }
 
-/// The service view's chrome: back, forward, address, reload, close, overflow.
+/// The service view's chrome: back, forward, address, fullscreen, reload,
+/// overflow.
 ///
 /// The address field lives *in* this row rather than on a row of its own: an
 /// earlier layout stacked a title row (name + host), a tab row and a separate
@@ -23,16 +24,18 @@ enum ServiceToolbarAction {
 /// times. The tab's URL now appears exactly once, editable, where a browser
 /// puts it.
 ///
+/// There is deliberately no close button: leaving is system back's job (page
+/// history first, then out to the grid with the session kept warm), so every
+/// pixel of this row works the page instead of duplicating navigation.
+///
 /// Two older corrections are still baked in:
 ///
 /// 1. The first version had no chrome at all ("just the WebView"), which left no
 ///    way to reload a wedged page.
-/// 2. The second version had a single left button that *morphed* between a back
+/// 2. A later version had a single left button that *morphed* between a back
 ///    arrow and a close cross depending on history. That was too clever: as soon
 ///    as you navigated anywhere the arrow took over, and there was no longer any
-///    way to leave the service except pressing back once per page. Back and
-///    close are now two separate, permanently visible buttons, each disabled
-///    when it has nothing to do.
+///    way to leave the service except pressing back once per page.
 ///
 /// Everything that changes during navigation is read from [ValueListenable]s
 /// *inside* this widget rather than passed in as plain values, so a history or
@@ -52,7 +55,6 @@ class ServiceToolbar extends StatelessWidget {
     required this.onForward,
     required this.onFullscreen,
     required this.onReload,
-    required this.onClose,
     required this.onAction,
     this.orientation,
   });
@@ -88,9 +90,6 @@ class ServiceToolbar extends StatelessWidget {
   final VoidCallback onFullscreen;
 
   final VoidCallback onReload;
-
-  /// Leave the service and return to the grid. The session stays warm.
-  final VoidCallback onClose;
 
   final ValueChanged<ServiceToolbarAction> onAction;
 
@@ -150,11 +149,6 @@ class ServiceToolbar extends StatelessWidget {
                         icon: Icons.refresh,
                         tooltip: 'Reload',
                         onTap: onReload,
-                      ),
-                      _ToolbarButton(
-                        icon: Icons.close,
-                        tooltip: 'Back to services',
-                        onTap: onClose,
                       ),
                       _OverflowMenu(onAction: onAction, orientation: orientation),
                     ],

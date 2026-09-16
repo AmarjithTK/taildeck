@@ -258,7 +258,6 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
                 onFullscreen: _toggleFullscreen,
                 onReload: () =>
                     unawaited(registry.reload(service.id, activeTab.id)),
-                onClose: widget.onExit,
                 onAction: (action) => _handleAction(service, action),
               ),
               _TabStrip(
