@@ -1,40 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:taildeck/data/models/icon_ref.dart';
-import 'package:taildeck/data/models/service_item.dart';
 import 'package:taildeck/theme/app_theme.dart';
 import 'package:taildeck/ui/web/widgets/service_toolbar.dart';
-
-ServiceItem _service() => ServiceItem(
-  id: 'a',
-  name: 'DSH',
-  url: 'http://100.114.169.45:3080',
-  icon: const IconRef(
-    kind: IconKind.monogram,
-    value: 'D',
-    accent: 0xFF22C55E,
-  ),
-  sortOrder: 0,
-  createdAt: DateTime.utc(2026),
-);
 
 Widget _harness({
   bool canGoBack = false,
   bool canGoForward = false,
   bool loading = false,
+  String urlText = 'http://100.114.169.45:3080',
   VoidCallback? onBack,
   VoidCallback? onForward,
   VoidCallback? onReload,
   VoidCallback? onClose,
+  VoidCallback? onUrlSubmit,
 }) => MaterialApp(
   theme: buildTailDeckTheme(),
   home: Scaffold(
     body: ServiceToolbar(
-      service: _service(),
       canGoBack: ValueNotifier<bool>(canGoBack),
       canGoForward: ValueNotifier<bool>(canGoForward),
       loading: ValueNotifier<bool>(loading),
       progress: ValueNotifier<double>(0),
+      urlController: TextEditingController(text: urlText),
+      urlFocus: FocusNode(),
+      onUrlSubmit: onUrlSubmit ?? () {},
       onBack: onBack ?? () {},
       onForward: onForward ?? () {},
       onReload: onReload ?? () {},
@@ -45,10 +34,13 @@ Widget _harness({
 );
 
 void main() {
-  testWidgets('identifies the service', (tester) async {
+  testWidgets('shows the tab address once, editable in the appbar', (
+    tester,
+  ) async {
     await tester.pumpWidget(_harness());
-    expect(find.text('DSH'), findsOneWidget);
-    expect(find.text('100.114.169.45:3080'), findsOneWidget);
+    // The URL appears exactly once — no repeated host line above or below.
+    expect(find.text('http://100.114.169.45:3080'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
   });
 
   testWidgets('close is always available, even with no history', (

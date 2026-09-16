@@ -19,12 +19,12 @@ import 'widgets/web_error_view.dart';
 
 /// One service on screen — `docs/UI_SPEC.md` §3.
 ///
-/// A slim toolbar (back, forward, title, reload, overflow) over a per-service
-/// tab strip and an editable address bar, over the page itself. Every tab
-/// keeps its own mounted WebView, so switching tabs — or switching services
-/// and coming back — resumes the exact page state. Leaving via system
-/// navigation only *deactivates* the service; the explicit Back control walks
-/// the active tab's WebView history.
+/// A slim appbar (back, forward, editable address, reload, overflow) over a
+/// per-service tab strip, over the page itself. Every tab keeps its own
+/// mounted WebView, so switching tabs — or switching services and coming
+/// back — resumes the exact page state. Leaving via system navigation only
+/// *deactivates* the service; the explicit Back control walks the active
+/// tab's WebView history.
 class ServiceWebView extends ConsumerStatefulWidget {
   const ServiceWebView({
     super.key,
@@ -206,11 +206,13 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
         return Column(
           children: <Widget>[
             ServiceToolbar(
-              service: service,
               canGoBack: activeSession.canGoBack,
               canGoForward: activeSession.canGoForward,
               loading: activeSession.loading,
               progress: activeSession.progress,
+              urlController: _urlController,
+              urlFocus: _urlFocus,
+              onUrlSubmit: () => _submitAddress(service),
               orientation: service.orientation,
               onBack: () {
                 _bumpPill();
@@ -238,11 +240,6 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
                         .read(servicesProvider.notifier)
                         .addTab(service.id),
               onRename: (tab) => unawaited(_renameTab(service, tab)),
-            ),
-            _AddressBar(
-              controller: _urlController,
-              focus: _urlFocus,
-              onSubmit: () => _submitAddress(service),
             ),
             Expanded(
               child: Stack(
@@ -466,83 +463,6 @@ class _TabChip extends StatelessWidget {
               )
             else
               const SizedBox(width: 8),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-/// The selected tab's address, editable. Submitting a new address navigates
-/// the tab and persists the new URL — tabs are never pinned to the URL they
-/// were created with.
-class _AddressBar extends StatelessWidget {
-  const _AddressBar({
-    required this.controller,
-    required this.focus,
-    required this.onSubmit,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focus;
-  final VoidCallback onSubmit;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: AppColors.surface,
-    child: DecoratedBox(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: SizedBox(
-        height: 44,
-        child: Row(
-          children: <Widget>[
-            const Padding(
-              padding: EdgeInsets.only(left: 12, right: 4),
-              child: Icon(
-                Icons.link,
-                size: 16,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focus,
-                keyboardType: TextInputType.url,
-                textCapitalization: TextCapitalization.none,
-                autocorrect: false,
-                enableSuggestions: false,
-                textInputAction: TextInputAction.go,
-                onSubmitted: (_) => onSubmit(),
-                style: AppText.mono.copyWith(
-                  fontSize: 12,
-                  color: AppColors.textPrimary,
-                ),
-                decoration: const InputDecoration(
-                  hintText: 'Address',
-                  hintStyle: TextStyle(color: AppColors.textDisabled),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 44,
-              height: double.infinity,
-              child: IconButton(
-                onPressed: onSubmit,
-                tooltip: 'Go',
-                padding: EdgeInsets.zero,
-                icon: const Icon(
-                  Icons.arrow_forward,
-                  size: 18,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
           ],
         ),
       ),

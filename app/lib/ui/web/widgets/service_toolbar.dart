@@ -15,9 +15,15 @@ enum ServiceToolbarAction {
   orientationLandscape,
 }
 
-/// The service view's chrome: back, forward, title, reload, close, overflow.
+/// The service view's chrome: back, forward, address, reload, close, overflow.
 ///
-/// Two corrections are baked into this layout:
+/// The address field lives *in* this row rather than on a row of its own: an
+/// earlier layout stacked a title row (name + host), a tab row and a separate
+/// address row, which ate ~140dp of vertical space and printed the host three
+/// times. The tab's URL now appears exactly once, editable, where a browser
+/// puts it.
+///
+/// Two older corrections are still baked in:
 ///
 /// 1. The first version had no chrome at all ("just the WebView"), which left no
 ///    way to reload a wedged page.
@@ -35,11 +41,13 @@ enum ServiceToolbarAction {
 class ServiceToolbar extends StatelessWidget {
   const ServiceToolbar({
     super.key,
-    required this.service,
     required this.canGoBack,
     required this.canGoForward,
     required this.loading,
     required this.progress,
+    required this.urlController,
+    required this.urlFocus,
+    required this.onUrlSubmit,
     required this.onBack,
     required this.onForward,
     required this.onReload,
@@ -51,15 +59,20 @@ class ServiceToolbar extends StatelessWidget {
   /// Height of the control row, excluding the status-bar inset.
   static const double controlHeight = 52;
 
-  /// Width of one control. Six of them fit a 360dp phone with room left over
-  /// for the title.
+  /// Width of one control. Five of them leave room for the address field on a
+  /// 360dp phone.
   static const double buttonWidth = 44;
 
-  final ServiceItem service;
   final ValueNotifier<bool> canGoBack;
   final ValueNotifier<bool> canGoForward;
   final ValueNotifier<bool> loading;
   final ValueNotifier<double> progress;
+
+  /// The active tab's address, owned by the service view: it follows
+  /// navigation while the user is not editing, and navigates on submit.
+  final TextEditingController urlController;
+  final FocusNode urlFocus;
+  final VoidCallback onUrlSubmit;
 
   /// The service's orientation lock, rendered as a checkmark in the overflow
   /// menu. Null hides the checkmarks (e.g. in tests that don't care).
@@ -109,7 +122,19 @@ class ServiceToolbar extends StatelessWidget {
                         tooltip: 'Forward',
                         onTap: canGoForward.value ? onForward : null,
                       ),
-                      Expanded(child: _Title(service: service)),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 2,
+                            vertical: 7,
+                          ),
+                          child: _AddressField(
+                            controller: urlController,
+                            focus: urlFocus,
+                            onSubmit: onUrlSubmit,
+                          ),
+                        ),
+                      ),
                       _ToolbarButton(
                         icon: Icons.refresh,
                         tooltip: 'Reload',
@@ -141,40 +166,49 @@ class ServiceToolbar extends StatelessWidget {
   }
 }
 
-class _Title extends StatelessWidget {
-  const _Title({required this.service});
+/// The active tab's address, editable in place. One field, one URL, no
+/// repeated host line above or below it.
+class _AddressField extends StatelessWidget {
+  const _AddressField({
+    required this.controller,
+    required this.focus,
+    required this.onSubmit,
+  });
 
-  final ServiceItem service;
+  final TextEditingController controller;
+  final FocusNode focus;
+  final VoidCallback onSubmit;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 4),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        Text(
-          service.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        Text(
-          service.displayHost,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: AppText.mono.copyWith(
-            fontSize: 10.5,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
+  Widget build(BuildContext context) => Container(
+    height: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    decoration: BoxDecoration(
+      color: AppColors.surfaceHigh,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AppColors.border),
+    ),
+    alignment: Alignment.center,
+    child: TextField(
+      controller: controller,
+      focusNode: focus,
+      keyboardType: TextInputType.url,
+      textCapitalization: TextCapitalization.none,
+      autocorrect: false,
+      enableSuggestions: false,
+      textInputAction: TextInputAction.go,
+      onSubmitted: (_) => onSubmit(),
+      style: AppText.mono.copyWith(
+        fontSize: 12,
+        color: AppColors.textPrimary,
+      ),
+      decoration: const InputDecoration(
+        hintText: 'Address',
+        hintStyle: TextStyle(color: AppColors.textDisabled),
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding: EdgeInsets.zero,
+      ),
     ),
   );
 }
