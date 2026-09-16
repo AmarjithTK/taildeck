@@ -53,6 +53,14 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
   late final FocusNode _urlFocus;
   AppOrientation? _appliedOrientation;
 
+  /// View-only mode: hides the toolbar, the tab strip and the system bars so
+  /// the page gets every pixel. Per service view, not persisted.
+  bool _fullscreen = false;
+
+  /// Whether immersive mode is currently applied, so the channel call fires
+  /// only on change rather than on every rebuild.
+  bool _uiFullscreenApplied = false;
+
   @override
   void initState() {
     super.initState();
@@ -63,10 +71,33 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
 
   @override
   void dispose() {
+    if (_uiFullscreenApplied) {
+      // Never trap the rest of the app (or the system) in immersive mode.
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     _pillTimer?.cancel();
     _urlController.dispose();
     _urlFocus.dispose();
     super.dispose();
+  }
+
+  void _toggleFullscreen() {
+    if (!mounted) return;
+    setState(() => _fullscreen = !_fullscreen);
+  }
+
+  /// Immersive mode is global, but fullscreen is per service view — so the
+  /// mode follows visibility: applied when this service is in the foreground
+  /// and fullscreen, restored otherwise (another service, the grid, dispose).
+  void _syncSystemUi(bool visible) {
+    final wantFullscreen = visible && _fullscreen;
+    if (wantFullscreen == _uiFullscreenApplied) return;
+    _uiFullscreenApplied = wantFullscreen;
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(
+        wantFullscreen ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      ),
+    );
   }
 
   void _bumpPill() {
@@ -203,44 +234,49 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
           _urlController.text = activeTab.url;
         }
 
+        _syncSystemUi(registry.activeServiceId == widget.serviceId);
+
         return Column(
           children: <Widget>[
-            ServiceToolbar(
-              canGoBack: activeSession.canGoBack,
-              canGoForward: activeSession.canGoForward,
-              loading: activeSession.loading,
-              progress: activeSession.progress,
-              urlController: _urlController,
-              urlFocus: _urlFocus,
-              onUrlSubmit: () => _submitAddress(service),
-              orientation: service.orientation,
-              onBack: () {
-                _bumpPill();
-                unawaited(widget.onBack());
-              },
-              onForward: () => unawaited(
-                registry.goForward(service.id, activeTab.id),
+            if (!_fullscreen) ...<Widget>[
+              ServiceToolbar(
+                canGoBack: activeSession.canGoBack,
+                canGoForward: activeSession.canGoForward,
+                loading: activeSession.loading,
+                progress: activeSession.progress,
+                urlController: _urlController,
+                urlFocus: _urlFocus,
+                onUrlSubmit: () => _submitAddress(service),
+                orientation: service.orientation,
+                onBack: () {
+                  _bumpPill();
+                  unawaited(widget.onBack());
+                },
+                onForward: () => unawaited(
+                  registry.goForward(service.id, activeTab.id),
+                ),
+                onFullscreen: _toggleFullscreen,
+                onReload: () =>
+                    unawaited(registry.reload(service.id, activeTab.id)),
+                onClose: widget.onExit,
+                onAction: (action) => _handleAction(service, action),
               ),
-              onReload: () =>
-                  unawaited(registry.reload(service.id, activeTab.id)),
-              onClose: widget.onExit,
-              onAction: (action) => _handleAction(service, action),
-            ),
-            _TabStrip(
-              service: service,
-              onSelect: (tab) => ref
-                  .read(servicesProvider.notifier)
-                  .setActiveTab(service.id, tab.id),
-              onCloseTab: (tab) => ref
-                  .read(servicesProvider.notifier)
-                  .closeTab(service.id, tab.id),
-              onAdd: service.tabs.length >= K.maxTabsPerService
-                  ? null
-                  : () => ref
-                        .read(servicesProvider.notifier)
-                        .addTab(service.id),
-              onRename: (tab) => unawaited(_renameTab(service, tab)),
-            ),
+              _TabStrip(
+                service: service,
+                onSelect: (tab) => ref
+                    .read(servicesProvider.notifier)
+                    .setActiveTab(service.id, tab.id),
+                onCloseTab: (tab) => ref
+                    .read(servicesProvider.notifier)
+                    .closeTab(service.id, tab.id),
+                onAdd: service.tabs.length >= K.maxTabsPerService
+                    ? null
+                    : () => ref
+                          .read(servicesProvider.notifier)
+                          .addTab(service.id),
+                onRename: (tab) => unawaited(_renameTab(service, tab)),
+              ),
+            ],
             Expanded(
               child: Stack(
                 fit: StackFit.expand,
@@ -295,6 +331,8 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
                     },
                     onLongPress: widget.onExit,
                   ),
+                  if (_fullscreen)
+                    _ExitFullscreenButton(onTap: _toggleFullscreen),
                 ],
               ),
             ),
@@ -305,8 +343,39 @@ class _ServiceWebViewState extends ConsumerState<ServiceWebView> {
   }
 }
 
-class _PillHost extends StatelessWidget {
-  const _PillHost({
+/// The way back out of fullscreen: a small translucent button pinned to the
+/// top-right corner, above the page. Always visible while fullscreen so the
+/// user can never get stuck without chrome.
+class _ExitFullscreenButton extends StatelessWidget {
+  const _ExitFullscreenButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    top: 10,
+    right: 10,
+    child: Material(
+      color: Colors.black54,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.all(10),
+          child: Icon(
+            Icons.fullscreen_exit,
+            size: 20,
+            color: Colors.white,
+            semanticLabel: 'Exit fullscreen',
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _PillHost extends StatelessWidget {  const _PillHost({
     required this.show,
     required this.idle,
     required this.onTap,

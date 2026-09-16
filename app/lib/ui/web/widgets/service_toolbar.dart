@@ -50,6 +50,7 @@ class ServiceToolbar extends StatelessWidget {
     required this.onUrlSubmit,
     required this.onBack,
     required this.onForward,
+    required this.onFullscreen,
     required this.onReload,
     required this.onClose,
     required this.onAction,
@@ -81,6 +82,11 @@ class ServiceToolbar extends StatelessWidget {
   /// One step back in page history.
   final VoidCallback onBack;
   final VoidCallback onForward;
+
+  /// Hides every bar (this toolbar, the tab strip, the system bars) so the
+  /// page gets the whole screen. A floating button leaves fullscreen.
+  final VoidCallback onFullscreen;
+
   final VoidCallback onReload;
 
   /// Leave the service and return to the grid. The session stays warm.
@@ -134,6 +140,11 @@ class ServiceToolbar extends StatelessWidget {
                             onSubmit: onUrlSubmit,
                           ),
                         ),
+                      ),
+                      _ToolbarButton(
+                        icon: Icons.fullscreen,
+                        tooltip: 'Fullscreen',
+                        onTap: onFullscreen,
                       ),
                       _ToolbarButton(
                         icon: Icons.refresh,

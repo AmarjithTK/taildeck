@@ -26,6 +26,7 @@ Widget _harness({
       onUrlSubmit: onUrlSubmit ?? () {},
       onBack: onBack ?? () {},
       onForward: onForward ?? () {},
+      onFullscreen: () {},
       onReload: onReload ?? () {},
       onClose: onClose ?? () {},
       onAction: (_) {},
