@@ -33,6 +33,7 @@ class _EditServiceScreenState extends ConsumerState<EditServiceScreen> {
   late bool _pinned;
   late bool _probeEnabled;
   late bool _desktopMode;
+  late AppOrientation _orientation;
 
   Timer? _validateTimer;
   UrlParseResult _urlResult = const UrlParseFailure(kUrlEmptyMessage);
@@ -66,6 +67,7 @@ class _EditServiceScreenState extends ConsumerState<EditServiceScreen> {
     _probeEnabled = service?.probeEnabled ?? true;
     _desktopMode =
         service?.desktopMode ?? ref.read(settingsProvider).desktopModeDefault;
+    _orientation = service?.orientation ?? AppOrientation.system;
 
     _urlResult = parseServiceUrl(_urlController.text);
   }
@@ -88,6 +90,7 @@ class _EditServiceScreenState extends ConsumerState<EditServiceScreen> {
         _pinned != original.pinned ||
         _probeEnabled != original.probeEnabled ||
         _desktopMode != original.desktopMode ||
+        _orientation != original.orientation ||
         _icon != original.icon;
   }
 
@@ -128,6 +131,7 @@ class _EditServiceScreenState extends ConsumerState<EditServiceScreen> {
         pinned: _pinned,
         probeEnabled: _probeEnabled,
         desktopMode: _desktopMode,
+        orientation: _orientation,
       );
     } else {
       saved = existing.copyWith(
@@ -137,6 +141,7 @@ class _EditServiceScreenState extends ConsumerState<EditServiceScreen> {
         pinned: _pinned,
         probeEnabled: _probeEnabled,
         desktopMode: _desktopMode,
+        orientation: _orientation,
       );
       notifier.update(saved);
     }
@@ -279,6 +284,70 @@ class _EditServiceScreenState extends ConsumerState<EditServiceScreen> {
                             value: _desktopMode,
                             onChanged: (value) =>
                                 setState(() => _desktopMode = value),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const FieldLabel('Orientation'),
+                    SurfacePanel(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'Applies to this service only.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SegmentedButton<AppOrientation>(
+                            segments: const <ButtonSegment<AppOrientation>>[
+                              ButtonSegment<AppOrientation>(
+                                value: AppOrientation.system,
+                                label: Text('System'),
+                                icon: Icon(
+                                  Icons.screen_rotation_outlined,
+                                  size: 18,
+                                ),
+                              ),
+                              ButtonSegment<AppOrientation>(
+                                value: AppOrientation.portrait,
+                                label: Text('Portrait'),
+                                icon: Icon(
+                                  Icons.stay_current_portrait_outlined,
+                                  size: 18,
+                                ),
+                              ),
+                              ButtonSegment<AppOrientation>(
+                                value: AppOrientation.landscape,
+                                label: Text('Landscape'),
+                                icon: Icon(
+                                  Icons.stay_current_landscape_outlined,
+                                  size: 18,
+                                ),
+                              ),
+                            ],
+                            selected: <AppOrientation>{_orientation},
+                            onSelectionChanged:
+                                (selection) => setState(
+                                  () => _orientation = selection.first,
+                                ),
+                            showSelectedIcon: false,
+                            style: SegmentedButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              selectedForegroundColor: AppColors.textPrimary,
+                              selectedBackgroundColor: AppColors.surfaceHigh,
+                              side: const BorderSide(
+                                color: AppColors.border,
+                              ),
+                            ),
                           ),
                         ],
                       ),

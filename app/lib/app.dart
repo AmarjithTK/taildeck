@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'platform/app_orientation.dart';
+import 'data/models/service_item.dart';
 import 'state/providers.dart';
 import 'state/web_session_registry.dart';
 import 'theme/app_theme.dart';
@@ -25,8 +27,16 @@ class TailDeckApp extends StatelessWidget {
 /// the grid and the WebView layer as siblings.
 ///
 /// Home and the web layer are **stacked, not pushed**. Home is never disposed,
-/// and each WebView stays mounted while its service is inactive, which is what
-/// makes "no tab strip, but state is preserved" work.
+/// and each loaded service — every tab of it — stays mounted while inactive,
+/// which is what preserves exact page state across service switches,
+/// backgrounding, Recents, and restarts (with persisted tab URLs covering a
+/// cold start).
+///
+/// There is a deliberate split in back-navigation duties:
+/// * Android system back / leaving TailDeck only *deactivates* the service —
+///   state is preserved, nothing navigates.
+/// * The explicit webpage Back control (toolbar, pill) walks the active tab's
+///   WebView history, and only leaves to the grid once history is exhausted.
 class RootShell extends ConsumerStatefulWidget {
   const RootShell({super.key});
 
@@ -44,14 +54,32 @@ class _RootShellState extends ConsumerState<RootShell>
     WidgetsBinding.instance.addObserver(this);
     _registry = ref.read(sessionRegistryProvider);
     _registry.lastRendererCrash.addListener(_onRendererCrash);
+    _registry.addListener(_applyActiveOrientation);
+    // Settle the orientation once the first frame exists.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _applyActiveOrientation();
+    });
   }
 
   @override
   void dispose() {
     _registry.lastRendererCrash.removeListener(_onRendererCrash);
+    _registry.removeListener(_applyActiveOrientation);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+
+  /// Restores the foreground service's orientation lock, or the system default
+  /// on the grid. A service's lock never leaks onto the grid or onto another
+  /// service: every activation re-applies.
+  void _applyActiveOrientation() {
+    final session = _registry.activeSession;
+    unawaited(applyAppOrientation(session?.service.orientation ?? _gridOrientation));
+  }
+
+  /// The grid follows the system rotation policy rather than holding whatever
+  /// the last service locked.
+  static const _gridOrientation = AppOrientation.system;
 
   /// The OS reclaimed a WebView renderer. The native guard stopped that from
   /// killing the app; all that is left is to explain why the page vanished.
@@ -76,26 +104,27 @@ class _RootShellState extends ConsumerState<RootShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    // Resume re-probes stale cards only. Sessions are never reloaded here:
+    // returning from the background or Recents must resume the exact state
+    // the user left, not recreate pages from their default URLs.
     ref.invalidate(vpnStateProvider);
     unawaited(ref.read(probeProvider.notifier).probeStale());
   }
 
-  /// Back: page history first, then out to the grid — and out to the grid means
-  /// *deactivate*, never dispose, so the session stays warm.
+  /// Explicit webpage Back: page history of the active tab first, then out to
+  /// the grid — and out to the grid means *deactivate*, never dispose, so
+  /// every session stays warm.
   Future<void> _back(WebSessionRegistry registry) async {
-    final activeId = registry.activeId;
-    if (activeId == null) return;
+    final session = registry.activeSession;
+    if (session == null) return;
 
-    final session = registry.sessionFor(activeId);
-    if (session != null) {
-      try {
-        if (await session.controller.canGoBack()) {
-          await session.controller.goBack();
-          return;
-        }
-      } on Object {
-        // A history query that fails should not trap the user in the page.
+    try {
+      if (await session.controller.canGoBack()) {
+        await session.controller.goBack();
+        return;
       }
+    } on Object {
+      // A history query that fails should not trap the user in the page.
     }
     registry.deactivate();
   }
@@ -108,7 +137,8 @@ class _RootShellState extends ConsumerState<RootShell>
       listenable: registry,
       builder: (context, _) => PopScope(
         // When the grid is showing, let Android close the app natively so the
-        // predictive-back animation still runs.
+        // predictive-back animation still runs. Leaving this way preserves
+        // state: the sessions stay mounted and Android resumes the task.
         canPop: registry.activeId == null,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;

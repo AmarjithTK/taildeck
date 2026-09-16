@@ -5,7 +5,15 @@ import '../../../theme/app_theme.dart';
 import 'web_progress_line.dart';
 
 /// Actions in the toolbar's overflow menu.
-enum ServiceToolbarAction { openExternal, copyAddress, editService, unloadPage }
+enum ServiceToolbarAction {
+  openExternal,
+  copyAddress,
+  editService,
+  unloadPage,
+  orientationSystem,
+  orientationPortrait,
+  orientationLandscape,
+}
 
 /// The service view's chrome: back, forward, title, reload, close, overflow.
 ///
@@ -37,6 +45,7 @@ class ServiceToolbar extends StatelessWidget {
     required this.onReload,
     required this.onClose,
     required this.onAction,
+    this.orientation,
   });
 
   /// Height of the control row, excluding the status-bar inset.
@@ -51,6 +60,10 @@ class ServiceToolbar extends StatelessWidget {
   final ValueNotifier<bool> canGoForward;
   final ValueNotifier<bool> loading;
   final ValueNotifier<double> progress;
+
+  /// The service's orientation lock, rendered as a checkmark in the overflow
+  /// menu. Null hides the checkmarks (e.g. in tests that don't care).
+  final AppOrientation? orientation;
 
   /// One step back in page history.
   final VoidCallback onBack;
@@ -107,7 +120,7 @@ class ServiceToolbar extends StatelessWidget {
                         tooltip: 'Back to services',
                         onTap: onClose,
                       ),
-                      _OverflowMenu(onAction: onAction),
+                      _OverflowMenu(onAction: onAction, orientation: orientation),
                     ],
                   ),
                 ),
@@ -200,9 +213,12 @@ class _ToolbarButton extends StatelessWidget {
 }
 
 class _OverflowMenu extends StatelessWidget {
-  const _OverflowMenu({required this.onAction});
+  const _OverflowMenu({required this.onAction, required this.orientation});
 
   final ValueChanged<ServiceToolbarAction> onAction;
+
+  /// The service's current orientation lock, shown as a checkmark.
+  final AppOrientation? orientation;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -235,6 +251,26 @@ class _OverflowMenu extends StatelessWidget {
           Icons.tune,
           'Service settings',
         ),
+        const PopupMenuDivider(),
+        _menuEntry(
+          ServiceToolbarAction.orientationSystem,
+          Icons.screen_rotation_outlined,
+          'Rotation: system default',
+          checked: orientation == null,
+        ),
+        _menuEntry(
+          ServiceToolbarAction.orientationPortrait,
+          Icons.stay_current_portrait_outlined,
+          'Lock portrait',
+          checked: orientation == AppOrientation.portrait,
+        ),
+        _menuEntry(
+          ServiceToolbarAction.orientationLandscape,
+          Icons.stay_current_landscape_outlined,
+          'Lock landscape',
+          checked: orientation == AppOrientation.landscape,
+        ),
+        const PopupMenuDivider(),
         _menuEntry(
           ServiceToolbarAction.unloadPage,
           Icons.layers_clear_outlined,
@@ -248,8 +284,9 @@ class _OverflowMenu extends StatelessWidget {
 PopupMenuItem<ServiceToolbarAction> _menuEntry(
   ServiceToolbarAction value,
   IconData icon,
-  String label,
-) => PopupMenuItem<ServiceToolbarAction>(
+  String label, {
+  bool checked = false,
+}) => PopupMenuItem<ServiceToolbarAction>(
   value: value,
   child: Row(
     children: <Widget>[
@@ -264,6 +301,11 @@ PopupMenuItem<ServiceToolbarAction> _menuEntry(
           style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
         ),
       ),
+      if (checked)
+        const Padding(
+          padding: EdgeInsets.only(left: 8),
+          child: Icon(Icons.check, size: 18, color: AppColors.primary),
+        ),
     ],
   ),
 );

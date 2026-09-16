@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants.dart';
+import '../core/url_utils.dart';
 import '../data/models/app_settings.dart';
 import '../data/models/icon_ref.dart';
 import '../data/models/probe_status.dart';
@@ -103,6 +104,7 @@ class ServicesNotifier extends Notifier<List<ServiceItem>> {
     bool pinned = false,
     bool probeEnabled = true,
     bool desktopMode = false,
+    AppOrientation orientation = AppOrientation.system,
   }) {
     if (isFull) return null;
     final cleanName = name.trim().isEmpty ? 'Service' : name.trim();
@@ -120,6 +122,7 @@ class ServicesNotifier extends Notifier<List<ServiceItem>> {
       pinned: pinned,
       probeEnabled: probeEnabled,
       desktopMode: desktopMode,
+      orientation: orientation,
       createdAt: DateTime.now(),
     );
     _commit(<ServiceItem>[...state, item]);
@@ -127,12 +130,22 @@ class ServicesNotifier extends Notifier<List<ServiceItem>> {
   }
 
   void update(ServiceItem item) {
+    // The service's default address is tracked by its `main` tab, so an
+    // address edit reloads that tab from the new origin while custom tabs
+    // keep their own pages.
+    var next = item;
+    final mainIndex = next.tabs.indexWhere((t) => t.id == 'main');
+    if (mainIndex != -1 && next.tabs[mainIndex].url != item.url) {
+      final tabs = List<ServiceTab>.of(next.tabs);
+      tabs[mainIndex] = tabs[mainIndex].copyWith(url: item.url);
+      next = next.copyWith(tabs: tabs);
+    }
     _commit(<ServiceItem>[
       for (final existing in state)
-        if (existing.id == item.id) item else existing,
+        if (existing.id == next.id) next else existing,
     ]);
     // A changed address must not keep serving the old page from a warm session.
-    ref.read(sessionRegistryProvider).invalidateIfOriginChanged(item);
+    ref.read(sessionRegistryProvider).noteServiceUpdated(next);
   }
 
   void remove(String id) {
@@ -141,6 +154,131 @@ class ServicesNotifier extends Notifier<List<ServiceItem>> {
       for (final existing in state)
         if (existing.id != id) existing,
     ]);
+  }
+
+  // -- Tabs (per service, persisted with the service) ----------------------
+
+  ServiceItem? _byId(String id) =>
+      state.where((s) => s.id == id).firstOrNull;
+
+  /// Adds a tab to a service. The new tab starts at [url] (or the service's
+  /// default address) and becomes the selected tab.
+  void addTab(String serviceId, {String? url}) {
+    final service = _byId(serviceId);
+    if (service == null) return;
+    if (service.tabs.length >= K.maxTabsPerService) return;
+    final tab = ServiceTab(
+      id: _uuid.v4(),
+      label: 'Tab ${service.tabs.length + 1}',
+      url: url ?? service.activeUrl,
+      createdAt: DateTime.now(),
+    );
+    final next = service.copyWith(
+      tabs: <ServiceTab>[...service.tabs, tab],
+      activeTabId: tab.id,
+    );
+    _commit(<ServiceItem>[
+      for (final existing in state)
+        if (existing.id == serviceId) next else existing,
+    ]);
+    ref.read(sessionRegistryProvider).noteServiceUpdated(next);
+  }
+
+  void setActiveTab(String serviceId, String tabId) {
+    final service = _byId(serviceId);
+    if (service == null) return;
+    if (!service.tabs.any((t) => t.id == tabId)) return;
+    if (service.activeTabId == tabId) return;
+    final next = service.copyWith(activeTabId: tabId);
+    _commit(<ServiceItem>[
+      for (final existing in state)
+        if (existing.id == serviceId) next else existing,
+    ]);
+    ref.read(sessionRegistryProvider).selectTab(serviceId, tabId);
+  }
+
+  /// Points one tab at a new URL — from the address bar or from in-page
+  /// navigation. The new URL is what persists and restores.
+  void updateTabUrl(String serviceId, String tabId, String url) {
+    final service = _byId(serviceId);
+    if (service == null) return;
+    final index = service.tabs.indexWhere((t) => t.id == tabId);
+    if (index == -1) return;
+    if (service.tabs[index].url == url) return;
+    final tabs = List<ServiceTab>.of(service.tabs);
+    tabs[index] = tabs[index].copyWith(url: url);
+    _commit(<ServiceItem>[
+      for (final existing in state)
+        if (existing.id == serviceId)
+          existing.copyWith(tabs: tabs)
+        else
+          existing,
+    ]);
+  }
+
+  /// Loads [url] into a tab after the address bar was edited: updates the
+  /// model (persisted) and tells the WebView to navigate.
+  Future<void> navigateTab(String serviceId, String tabId, String rawUrl) async {
+    final parsed = parseServiceUrl(rawUrl);
+    if (parsed is! UrlParseOk) return;
+    updateTabUrl(serviceId, tabId, parsed.normalized);
+    await ref
+        .read(sessionRegistryProvider)
+        .loadUrl(serviceId, tabId, parsed.uri);
+  }
+
+  void closeTab(String serviceId, String tabId) {
+    final service = _byId(serviceId);
+    if (service == null) return;
+    if (service.tabs.length <= 1) return;
+    final tabs = <ServiceTab>[
+      for (final tab in service.tabs)
+        if (tab.id != tabId) tab,
+    ];
+    final next = service.copyWith(
+      tabs: tabs,
+      activeTabId: service.activeTabId == tabId
+          ? tabs.last.id
+          : service.activeTabId,
+    );
+    _commit(<ServiceItem>[
+      for (final existing in state)
+        if (existing.id == serviceId) next else existing,
+    ]);
+    ref.read(sessionRegistryProvider).syncTabsFor(next);
+  }
+
+  void renameTab(String serviceId, String tabId, String label) {
+    final service = _byId(serviceId);
+    if (service == null) return;
+    final clean = label.trim();
+    if (clean.isEmpty) return;
+    final tabs = <ServiceTab>[
+      for (final tab in service.tabs)
+        if (tab.id == tabId) tab.copyWith(label: clean) else tab,
+    ];
+    _commit(<ServiceItem>[
+      for (final existing in state)
+        if (existing.id == serviceId)
+          existing.copyWith(tabs: tabs)
+        else
+          existing,
+    ]);
+    final next = _byId(serviceId);
+    if (next != null) ref.read(sessionRegistryProvider).syncTabsFor(next);
+  }
+
+  // -- Orientation (per service, persisted with the service) ----------------
+
+  void setOrientation(String serviceId, AppOrientation orientation) {
+    final service = _byId(serviceId);
+    if (service == null || service.orientation == orientation) return;
+    final next = service.copyWith(orientation: orientation);
+    _commit(<ServiceItem>[
+      for (final existing in state)
+        if (existing.id == serviceId) next else existing,
+    ]);
+    ref.read(sessionRegistryProvider).syncTabsFor(next);
   }
 
   ServiceItem? duplicate(String id) {
@@ -156,6 +294,9 @@ class ServicesNotifier extends Notifier<List<ServiceItem>> {
       pinned: false,
       probeEnabled: source.probeEnabled,
       desktopMode: source.desktopMode,
+      tabs: source.tabs,
+      activeTabId: source.activeTabId,
+      orientation: source.orientation,
       createdAt: DateTime.now(),
     );
     _commit(<ServiceItem>[...state, copy]);
@@ -163,8 +304,13 @@ class ServicesNotifier extends Notifier<List<ServiceItem>> {
   }
 
   /// Bulk replace, used by the import path.
-  void replaceAll(List<ServiceItem> items) =>
-      _commit(items.take(K.maxServices).toList());
+  void replaceAll(List<ServiceItem> items) {
+    final next = items.take(K.maxServices).toList();
+    ref
+        .read(sessionRegistryProvider)
+        .pruneExcept(<String>{for (final item in next) item.id});
+    _commit(next);
+  }
 }
 
 final servicesProvider = NotifierProvider<ServicesNotifier, List<ServiceItem>>(
@@ -183,6 +329,11 @@ final sessionRegistryProvider = Provider<WebSessionRegistry>((ref) {
   registry.setExternalLinkPolicy(
     ref.read(settingsProvider).externalLinkPolicy,
   );
+  // In-page navigation updates the tab's persisted URL, so a restart resumes
+  // the current page rather than the tab's original URL.
+  registry.onTabUrlChanged = (serviceId, tabId, url) {
+    ref.read(servicesProvider.notifier).updateTabUrl(serviceId, tabId, url);
+  };
   ref.listen<AppSettings>(settingsProvider, (previous, next) {
     registry.setCapacity(next.sessionCapacity);
     registry.setExternalLinkPolicy(next.externalLinkPolicy);

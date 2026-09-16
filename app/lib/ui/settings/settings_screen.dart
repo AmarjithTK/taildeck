@@ -381,10 +381,7 @@ class SettingsScreen extends ConsumerWidget {
     );
     if (!confirmed || !context.mounted) return;
 
-    final registry = ref.read(sessionRegistryProvider);
-    for (final session in registry.live) {
-      registry.close(session.serviceId);
-    }
+    ref.read(sessionRegistryProvider).closeAll();
     ref.read(servicesProvider.notifier).replaceAll(<ServiceItem>[]);
     ref.read(settingsProvider.notifier).update((_) => const AppSettings());
     if (!context.mounted) return;

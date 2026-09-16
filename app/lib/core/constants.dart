@@ -11,9 +11,17 @@ abstract final class K {
   static const double screenPadding = 16;
 
   // WebView sessions -----------------------------------------------------
-  static const int defaultSessionCapacity = 3;
+  // Capacity counts *services*, not tabs: every tab of a loaded service stays
+  // mounted, so switching tabs or services never resets page state. The
+  // default keeps every card warm; lowering it only evicts whole services
+  // (never the visible one), and evicted tabs still restore their persisted
+  // URL instead of the service default.
+  static const int defaultSessionCapacity = maxServices;
   static const int minSessionCapacity = 1;
-  static const int maxSessionCapacity = 5;
+  static const int maxSessionCapacity = maxServices;
+
+  // Tabs -------------------------------------------------------------------
+  static const int maxTabsPerService = 8;
 
   // Reachability probing ------------------------------------------------
   static const Duration connectTimeout = Duration(milliseconds: 1500);

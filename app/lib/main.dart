@@ -10,10 +10,13 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Portrait-locked in v1; the grid is written against a breakpoint so a
-  // landscape layout is a change of constants, not a rewrite.
+  // Rotation is per-service, not global: start unlocked and let `RootShell`
+  // apply each foreground service's own lock (system default on the grid).
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
   ]);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
